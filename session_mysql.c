@@ -329,7 +329,11 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 				if (row=mysql_fetch_row(res)) {
 					lengths=mysql_fetch_lengths(res);
 					if (lengths[0]>0) {
-						*val=estrdup(row[0]);
+						/* do not use estrdup, because session data can contain '\0' */
+						*val=emalloc(lengths[0]+1);
+						memcpy(*val,row[0],lengths[0]);
+						*(*val+lengths[0])='\0';
+
 						*vallen=lengths[0];
 						ret=SUCCESS;
 					} else {
