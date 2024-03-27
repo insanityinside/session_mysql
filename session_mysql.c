@@ -513,11 +513,10 @@ static int session_mysql_delete(const char *key TSRMLS_DC) {
 static int session_mysql_gc() {
 	char *prequery="delete from phpsession where unix_timestamp()>=sess_mtime+%s";
 	char *query=NULL;
+	char *query_optimize="optimize table phpsession";
+	int query_optimize_len=25;
 	int key_len, query_len, prequery_len, ret=FAILURE;
 	MYSQL_RES *res;
-	MYSQL_ROW row;
-	my_ulonglong rows;
-	unsigned long *lengths;
 
 	prequery_len=strlen(prequery)+strlen(SESSION_MYSQL_G(gc_maxlifetime))+1;
 	query=emalloc(prequery_len);
@@ -528,6 +527,10 @@ static int session_mysql_gc() {
 		if (mysql_affected_rows(SESSION_MYSQL_G(mysql))==1) {
 			ret=SUCCESS;
 		}
+	}
+	if (!mysql_real_query(SESSION_MYSQL_G(mysql),query_optimize,query_optimize_len)) {
+		res=mysql_use_result(SESSION_MYSQL_G(mysql));
+		mysql_free_result(res);
 	}
 
 	if (query) {
