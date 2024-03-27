@@ -31,7 +31,7 @@ ZEND_DECLARE_MODULE_GLOBALS(session_mysql)
 
 /* {{{ zend_session_mysql_init_globals
  */
-static void session_mysql_init_globals(zend_session_mysql_globals *session_mysql_globals_p TSRMLS_DC)
+static void session_mysql_init_globals(zend_session_mysql_globals *session_mysql_globals_p)
 {
 	SESSION_MYSQL_G(db)=NULL;
 	SESSION_MYSQL_G(host)=NULL;
@@ -238,7 +238,7 @@ PHP_MINIT_FUNCTION(session_mysql)
 
 	REGISTER_INI_ENTRIES();
 
-//	ChangeSessionMysqlHost(TSRMLS_C);
+//	ChangeSessionMysqlHost();
 
 	php_session_register_module(&ps_mod_mysql);
 	return SUCCESS;
@@ -379,7 +379,7 @@ static void session_mysql_close(TSRMLS_D) {
 	}
 }
 
-static int session_mysql_read(const char *key, char **val, int *vallen TSRMLS_DC) {
+static int session_mysql_read(const char *key, char **val, int *vallen) {
 	int key_len, query_len, selectquery_len, lockquery_len, escapedhost_len, ret=FAILURE;
 
 	char *prequery_select="select sess_val from phpsession where sess_key='%s' and sess_host='%s' and unix_timestamp()<=sess_mtime+%s";
@@ -397,7 +397,7 @@ static int session_mysql_read(const char *key, char **val, int *vallen TSRMLS_DC
 	my_ulonglong rows;
 	unsigned long *lengths;
 
-	escapedhost=get_escapedhost(TSRMLS_C);
+	escapedhost=get_escapedhost();
 	escapedhost_len=strlen(escapedhost);
 
 	key_len=strlen(key);
@@ -462,7 +462,7 @@ static int session_mysql_read(const char *key, char **val, int *vallen TSRMLS_DC
 	return ret;
 }
 
-static int session_mysql_write(const char *key, const char *val, const int vallen TSRMLS_DC) {
+static int session_mysql_write(const char *key, const char *val, const int vallen) {
 	int key_len, query_len, updatequery_len, insertquery_len, unlockquery_len, escapedhost_len, ret=FAILURE;
 	char *prequery_update="update phpsession set sess_val='%s',sess_mtime=unix_timestamp() where sess_host='%s' and sess_key='%s'";
 	int prequery_update_len=102;
@@ -478,7 +478,7 @@ static int session_mysql_write(const char *key, const char *val, const int valle
 	char *query_unlock=NULL;
 	MYSQL_RES *res;
 
-	escapedhost=get_escapedhost(TSRMLS_C);
+	escapedhost=get_escapedhost();
 	escapedhost_len=strlen(escapedhost);
 
 	key_len=strlen(key);
@@ -545,7 +545,7 @@ static int session_mysql_write(const char *key, const char *val, const int valle
 }
 
 
-static int session_mysql_delete(const char *key TSRMLS_DC) {
+static int session_mysql_delete(const char *key) {
 	int key_len, query_len, deletequery_len, unlockquery_len, escapedhost_len, ret=FAILURE;
 	char *prequery_delete="delete from phpsession where sess_key='%s' and sess_host='%s'";
 	int prequery_delete_len=62;
@@ -560,7 +560,7 @@ static int session_mysql_delete(const char *key TSRMLS_DC) {
 	my_ulonglong rows;
 	unsigned long *lengths;
 
-	escapedhost=get_escapedhost(TSRMLS_C);
+	escapedhost=get_escapedhost();
 	escapedhost_len=strlen(escapedhost);
 
 	key_len=strlen(key);
@@ -646,7 +646,7 @@ PS_OPEN_FUNC(mysql)
 	int ret;
 	*mod_data = (void *)1;
 
-	ret=session_mysql_connect(TSRMLS_C);
+	ret=session_mysql_connect();
 	if (SESSION_MYSQL_G(quiet)) {
 		return SUCCESS;
 	} else {
@@ -661,7 +661,7 @@ PS_CLOSE_FUNC(mysql)
 {
 	*mod_data = (void *)0;
 
-	session_mysql_close(TSRMLS_C);
+	session_mysql_close();
 
 	return SUCCESS;
 }
@@ -673,13 +673,13 @@ PS_READ_FUNC(mysql)
 {
 	int ret;
 	if (!SESSION_MYSQL_G(mysql)) {
-		if (!session_mysql_connect(TSRMLS_C)){
+		if (!session_mysql_connect()){
 			return FAILURE;
 		}
 	}
 
 	/* here is ok to return failure */
-	ret=session_mysql_read(key,val,vallen TSRMLS_CC);
+	ret=session_mysql_read(key,val,vallen);
 
 	return ret;
 }
@@ -692,7 +692,7 @@ PS_WRITE_FUNC(mysql)
 	int ret;
 
 	if (!SESSION_MYSQL_G(mysql)) {
-		if (!session_mysql_connect(TSRMLS_C)){
+		if (!session_mysql_connect()){
 			if (SESSION_MYSQL_G(quiet)) {
 				return SUCCESS;
 			} else {
@@ -701,7 +701,7 @@ PS_WRITE_FUNC(mysql)
 		}
 	}
 
-	ret=session_mysql_write(key, val, vallen TSRMLS_CC);
+	ret=session_mysql_write(key, val, vallen);
 
 	if (SESSION_MYSQL_G(quiet)) {
 		return SUCCESS;
@@ -718,7 +718,7 @@ PS_DESTROY_FUNC(mysql)
 	int ret;
 
 	if (!SESSION_MYSQL_G(mysql)) {
-		if (!session_mysql_connect(TSRMLS_C)){
+		if (!session_mysql_connect()){
 			if (SESSION_MYSQL_G(quiet)) {
 				return SUCCESS;
 			} else {
@@ -727,7 +727,7 @@ PS_DESTROY_FUNC(mysql)
 		}
 	}
 
-	ret=session_mysql_delete(key TSRMLS_CC);
+	ret=session_mysql_delete(key);
 
 	if (SESSION_MYSQL_G(quiet)) {
 		return SUCCESS;
@@ -744,7 +744,7 @@ PS_GC_FUNC(mysql)
 	int ret;
 
 	if (!SESSION_MYSQL_G(mysql)) {
-		if (!session_mysql_connect(TSRMLS_C)){
+		if (!session_mysql_connect()){
 			if (SESSION_MYSQL_G(quiet)) {
 				return FAILURE;
 			} else {
@@ -753,7 +753,7 @@ PS_GC_FUNC(mysql)
 		}
 	}
 
-	ret=session_mysql_gc(TSRMLS_C);
+	ret=session_mysql_gc();
 
 	if (SESSION_MYSQL_G(quiet)) {
 		return SUCCESS;
@@ -789,12 +789,12 @@ PS_VALIDATE_SID_FUNC(mysql)
 	}
 
 	if (!SESSION_MYSQL_G(mysql)) {
-		if (!session_mysql_connect(TSRMLS_C)){
+		if (!session_mysql_connect()){
 			return FAILURE;
 		}
 	}
 
-	ret=session_mysql_read(key,&val,&vallen TSRMLS_CC);
+	ret=session_mysql_read(key,&val,&vallen);
 
 	return ret;
 }
