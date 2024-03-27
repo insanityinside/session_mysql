@@ -19,6 +19,8 @@ patches and comments are welcome
 
 CHANGELOG
 
+12.06.2006 - ver 1.9 - fixes compilation with ZTS (thanks to Elan Ruusamäe)
+                     - default port set to 3306 (thanks to Juan Fernández)
 17.04.2006 - ver 1.8 - fixed persistent connections with mysql 5.0 client library (thanks to zoeloelip)
                      - fixed session_destroy - when affected rows==0 we must return SUCCESSFUL (thanks to zoeloelip)
                      - add port, sock variables to session_mysql.db
