@@ -153,13 +153,13 @@ PHP_INI_BEGIN()
 /* eee, we handle session_mysql.db in PHP_MINIT_FUNCTION, because it is hidden :)
 STD_PHP_INI_ENTRY("session_mysql.db", "host=localhost db=phpsession user=phpsession pass=phpsession", PHP_INI_SYSTEM, OnChangeSessionMysqlHost, conn, zend_session_mysql_globals, session_mysql_globals)
 */
-STD_PHP_INI_ENTRY("session_mysql.hostcheck", "1", PHP_INI_SYSTEM, OnUpdateBool, hostcheck, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.hostcheck_removewww", "1", PHP_INI_SYSTEM, OnUpdateBool, hostcheck_removewww, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.hostcheck", "1", PHP_INI_ALL, OnUpdateBool, hostcheck, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.hostcheck_removewww", "1", PHP_INI_ALL, OnUpdateBool, hostcheck_removewww, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.persistent", "1", PHP_INI_SYSTEM, OnUpdateBool, persistent, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.gc_maxlifetime", "21600", PHP_INI_SYSTEM, OnUpdateString, gc_maxlifetime, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.quiet", "0", PHP_INI_SYSTEM, OnUpdateBool, quiet, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.locking", "1", PHP_INI_SYSTEM, OnUpdateBool, locking, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.lock_timeout", "5", PHP_INI_SYSTEM, OnUpdateString, lock_timeout, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.quiet", "0", PHP_INI_ALL, OnUpdateBool, quiet, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.locking", "1", PHP_INI_ALL, OnUpdateBool, locking, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.lock_timeout", "5", PHP_INI_ALL, OnUpdateString, lock_timeout, zend_session_mysql_globals, session_mysql_globals)
 PHP_INI_END()
 /* }}} */
 
@@ -282,12 +282,12 @@ static void session_mysql_close() {
 }
 
 static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS_DC) {
-	int key_len, query_len, selectquery_len, lockquery_len ,ret=FAILURE;
+	int key_len, query_len, selectquery_len, lockquery_len, escapedhost_len, ret=FAILURE;
 
 	char *prequery_select="select sess_val from phpsession where sess_key='%s' and sess_host='%s' and unix_timestamp()<=sess_mtime+%s";
 	int prequery_select_len=106;
 
-	char *prequery_lock="select get_lock('%s',%s)";
+	char *prequery_lock="select get_lock('%s%s',%s)";
 	int prequery_lock_len=24;
 
 	char *escapedkey=NULL;
@@ -300,6 +300,7 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 	unsigned long *lengths;
 
 	escapedhost=get_escapedhost();
+	escapedhost_len=strlen(escapedhost);
 
 	key_len=strlen(key);
 
@@ -308,16 +309,16 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedkey,key,key_len);
 
 	if (SESSION_MYSQL_G(locking)) {
-		lockquery_len=prequery_lock_len+(key_len*2+1)+strlen(SESSION_MYSQL_G(lock_timeout));
+		lockquery_len=prequery_lock_len+(key_len*2+1)+escapedhost_len+strlen(SESSION_MYSQL_G(lock_timeout));
 		query_lock=emalloc(lockquery_len);
-		query_len=snprintf(query_lock,lockquery_len,prequery_lock,escapedkey,SESSION_MYSQL_G(lock_timeout));
+		query_len=snprintf(query_lock,lockquery_len,prequery_lock,escapedkey,escapedhost,SESSION_MYSQL_G(lock_timeout));
 		mysql_real_query(SESSION_MYSQL_G(mysql),query_lock,query_len);
 		res=mysql_use_result(SESSION_MYSQL_G(mysql));
 		mysql_free_result(res);
 	}
 
 
-	selectquery_len=prequery_select_len+(key_len*2+1)+strlen(SESSION_MYSQL_G(gc_maxlifetime))+strlen(escapedhost);
+	selectquery_len=prequery_select_len+(key_len*2+1)+strlen(SESSION_MYSQL_G(gc_maxlifetime))+escapedhost_len;
 	query_select=emalloc(selectquery_len);
 
 	query_len=snprintf(query_select,selectquery_len,prequery_select,escapedkey,escapedhost,SESSION_MYSQL_G(gc_maxlifetime));
@@ -360,12 +361,12 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 } 
 
 static int session_mysql_write(const char *key, const char *val, const size_t vallen TSRMLS_DC) {
-	int key_len, query_len, updatequery_len, insertquery_len, unlockquery_len, ret=FAILURE;
+	int key_len, query_len, updatequery_len, insertquery_len, unlockquery_len, escapedhost_len, ret=FAILURE;
 	char *prequery_update="update phpsession set sess_val='%s',sess_mtime=unix_timestamp() where sess_host='%s' and sess_key='%s'";
 	int prequery_update_len=102;
 	char *prequery_insert="insert into phpsession(sess_key,sess_host,sess_mtime,sess_val) values('%s','%s',unix_timestamp(),'%s')";
 	int prequery_insert_len=102;
-	char *prequery_unlock="select release_lock('%s')";
+	char *prequery_unlock="select release_lock('%s%s')";
 	int prequery_unlock_len=25;
 	char *escapedkey=NULL;
 	char *escapedval=NULL;
@@ -376,6 +377,7 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 	MYSQL_RES *res;
 
 	escapedhost=get_escapedhost();
+	escapedhost_len=strlen(escapedhost);
 
 	key_len=strlen(key);
 
@@ -385,7 +387,7 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedkey,key,key_len);
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedval,val,vallen);
 
-	updatequery_len=prequery_update_len+(key_len*2+1)+(vallen*2+1)+strlen(escapedhost);
+	updatequery_len=prequery_update_len+(key_len*2+1)+(vallen*2+1)+escapedhost_len;
 
 	query_update=emalloc(updatequery_len);
 
@@ -395,7 +397,7 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 		if (mysql_affected_rows(SESSION_MYSQL_G(mysql))==1) {
 			ret=SUCCESS;
 		} else {
-			insertquery_len=prequery_insert_len+(key_len*2+1)+(vallen*2+1)+strlen(escapedhost);
+			insertquery_len=prequery_insert_len+(key_len*2+1)+(vallen*2+1)+escapedhost_len;
 			query_insert=emalloc(insertquery_len);
 
 			query_len=snprintf((char *)query_insert,insertquery_len,prequery_insert,escapedkey,escapedhost,escapedval);
@@ -409,9 +411,9 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 	}
 
 	if (SESSION_MYSQL_G(locking)) {
-		unlockquery_len=prequery_unlock_len+(key_len*2+1);
+		unlockquery_len=prequery_unlock_len+(key_len*2+1)+escapedhost_len;
 		query_unlock=emalloc(unlockquery_len);
-		query_len=snprintf(query_unlock,unlockquery_len,prequery_unlock,escapedkey);
+		query_len=snprintf(query_unlock,unlockquery_len,prequery_unlock,escapedkey,escapedhost);
 		mysql_real_query(SESSION_MYSQL_G(mysql),query_unlock,query_len);
 		res=mysql_use_result(SESSION_MYSQL_G(mysql));
 		mysql_free_result(res);
@@ -442,17 +444,22 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 
 
 static int session_mysql_delete(const char *key TSRMLS_DC) {
-	int key_len, query_len, prequery_len, ret=FAILURE;
-	char *prequery="delete from phpsession where sess_key='%s' and sess_host='%s'";
+	int key_len, query_len, deletequery_len, unlockquery_len, escapedhost_len, ret=FAILURE;
+	char *prequery_delete="delete from phpsession where sess_key='%s' and sess_host='%s'";
+	int prequery_delete_len=62;
+	char *prequery_unlock="select release_lock('%s%s')";
+	int prequery_unlock_len=25;
 	char *escapedkey=NULL;
 	char *escapedhost=NULL;
-	char *query=NULL;
+	char *query_delete=NULL;
+	char *query_unlock=NULL;
 	MYSQL_RES *res;
 	MYSQL_ROW row;
 	my_ulonglong rows;
 	unsigned long *lengths;
 
 	escapedhost=get_escapedhost();
+	escapedhost_len=strlen(escapedhost);
 
 	key_len=strlen(key);
 
@@ -460,15 +467,24 @@ static int session_mysql_delete(const char *key TSRMLS_DC) {
 
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedkey,key,key_len);
 
-	prequery_len=strlen(prequery)+(key_len*2+1)+strlen(escapedhost);
-	query=emalloc(prequery_len);
+	deletequery_len=prequery_delete_len+(key_len*2+1)+escapedhost_len;
+	query_delete=emalloc(deletequery_len);
 
-	query_len=snprintf(query,prequery_len,prequery,escapedkey,escapedhost);
+	query_len=snprintf(query_delete,deletequery_len,prequery_delete,escapedkey,escapedhost);
 
-	if (!mysql_real_query(SESSION_MYSQL_G(mysql),query,query_len)) {
+	if (!mysql_real_query(SESSION_MYSQL_G(mysql),query_delete,query_len)) {
 		if (mysql_affected_rows(SESSION_MYSQL_G(mysql))==1) {
 			ret=SUCCESS;
 		}
+	}
+
+	if (SESSION_MYSQL_G(locking)) {
+		unlockquery_len=prequery_unlock_len+(key_len*2+1)+escapedhost_len;
+		query_unlock=emalloc(unlockquery_len);
+		query_len=snprintf(query_unlock,unlockquery_len,prequery_unlock,escapedkey,escapedhost);
+		mysql_real_query(SESSION_MYSQL_G(mysql),query_unlock,query_len);
+		res=mysql_use_result(SESSION_MYSQL_G(mysql));
+		mysql_free_result(res);
 	}
 
 	if (escapedkey) {
@@ -479,10 +495,14 @@ static int session_mysql_delete(const char *key TSRMLS_DC) {
 		efree(escapedhost);
 	}
 
-	if (query) {
-		efree(query);
+	if (query_delete) {
+		efree(query_delete);
 	}
-	
+
+	if (query_unlock) {
+		efree(query_unlock);
+	}
+
 	return ret;
 }
 

@@ -31,7 +31,7 @@ ZEND_END_MODULE_GLOBALS(session_mysql)
 #define SESSION_MYSQL_G(v) (session_mysql_globals.v)
 #endif
 
-#define PHP_SESSION_MYSQL_VERSION "1.2"
+#define PHP_SESSION_MYSQL_VERSION "1.3"
 #define PHP_SESSION_MYSQL_EXTNAME "session_mysql"
 
 #include "ext/session/php_session.h"
