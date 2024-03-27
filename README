@@ -18,14 +18,14 @@ patches and comments are welcome
 
 CHANGELOG
 
-10.09.2007 - ver 1.10 - fix memory leak (patch from Elan Ruusam‰e)
+10.09.2007 - ver 1.10 - fix memory leak (patch from Elan Ruusam√§e)
                       - resolve session handle being broken until webserver restart
 		        if the connection to mysql server is dropped
 			(either due server restart or server timeout)
-			(patch from Elan Ruusam‰e)
-		      - fix segmentation fault when no module php.ini setting is set (thanks to Elan Ruusam‰e)
-12.06.2006 - ver 1.9 - fixes compilation with ZTS (thanks to Elan Ruusam‰e)
-                     - default port set to 3306 (thanks to Juan Fern·ndez)
+			(patch from Elan Ruusam√§e)
+		      - fix segmentation fault when no module php.ini setting is set (thanks to Elan Ruusam√§e)
+12.06.2006 - ver 1.9 - fixes compilation with ZTS (thanks to Elan Ruusam√§e)
+                     - default port set to 3306 (thanks to Juan Fern√°ndez)
 17.04.2006 - ver 1.8 - fixed persistent connections with mysql 5.0 client library (thanks to zoeloelip)
                      - fixed session_destroy - when affected rows==0 we must return SUCCESSFUL (thanks to zoeloelip)
                      - add port, sock variables to session_mysql.db
