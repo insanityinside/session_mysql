@@ -147,14 +147,6 @@ int ChangeSessionMysqlHost(TSRMLS_D)
 	return(SUCCESS);
 }
 
-/* {{{ PHP_INI_DISP(hide_session_mysql_db)
- */
-PHP_INI_DISP(hide_session_mysql_db) {
-	ZEND_PUTS("hidden");
-}
-/* }}} */
-
-
 /* {{{ PHP_INI
  */
 PHP_INI_BEGIN()
@@ -165,6 +157,9 @@ STD_PHP_INI_ENTRY("session_mysql.hostcheck", "1", PHP_INI_SYSTEM, OnUpdateBool, 
 STD_PHP_INI_ENTRY("session_mysql.hostcheck_removewww", "1", PHP_INI_SYSTEM, OnUpdateBool, hostcheck_removewww, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.persistent", "1", PHP_INI_SYSTEM, OnUpdateBool, persistent, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.gc_maxlifetime", "21600", PHP_INI_SYSTEM, OnUpdateString, gc_maxlifetime, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.quiet", "0", PHP_INI_SYSTEM, OnUpdateBool, quiet, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.locking", "1", PHP_INI_SYSTEM, OnUpdateBool, locking, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.lock_timeout", "5", PHP_INI_SYSTEM, OnUpdateString, lock_timeout, zend_session_mysql_globals, session_mysql_globals)
 PHP_INI_END()
 /* }}} */
 
@@ -187,7 +182,13 @@ PHP_MINIT_FUNCTION(session_mysql)
  */
 PHP_MSHUTDOWN_FUNCTION(session_mysql)
 {
-//	UNREGISTER_INI_ENTRIES();
+	UNREGISTER_INI_ENTRIES();
+
+	if (SESSION_MYSQL_G(mysql)) {
+		mysql_close(SESSION_MYSQL_G(mysql));
+		SESSION_MYSQL_G(mysql)=NULL;
+	}
+
 	return SUCCESS;
 }
 /* }}} */
@@ -224,7 +225,8 @@ PHP_RSHUTDOWN_FUNCTION(session_mysql)
 PHP_MINFO_FUNCTION(session_mysql)
 {
 	php_info_print_table_start();
-	php_info_print_table_header(2, "MySQL Session Save Handler", "enabled");
+	php_info_print_table_row(2, "MySQL Session Save Handler", "enabled");
+	php_info_print_table_row(2, "Version", PHP_SESSION_MYSQL_VERSION);
 	php_info_print_table_end();
 
 	DISPLAY_INI_ENTRIES();
@@ -258,18 +260,18 @@ static int session_mysql_connect() {
 	if (!SESSION_MYSQL_G(mysql) || !SESSION_MYSQL_G(persistent)) {
 		if (!SESSION_MYSQL_G(mysql)) {
 			if (!(SESSION_MYSQL_G(mysql)=mysql_init(SESSION_MYSQL_G(mysql)))) {
-				return 0;
+				return FAILURE;
 			}
 		}
 		if (mysql_real_connect(SESSION_MYSQL_G(mysql), SESSION_MYSQL_G(host), SESSION_MYSQL_G(user), SESSION_MYSQL_G(pass), SESSION_MYSQL_G(db),0,NULL,CLIENT_FOUND_ROWS)) {
-			return 1;
+			return SUCCESS;
 		}
 	} else {
 		if (mysql_ping(SESSION_MYSQL_G(mysql))==0) {
-			return 1;
+			return SUCCESS;
 		}
 	}
-	return 0;
+	return FAILURE;
 }
 
 static void session_mysql_close() {
@@ -280,16 +282,22 @@ static void session_mysql_close() {
 }
 
 static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS_DC) {
-	int key_len,query_len,prequery_len;
-	char *prequery="select sess_val from phpsession where sess_key=\"%s\" and sess_host=\"%s\" and unix_timestamp()<=sess_mtime+%s";
+	int key_len, query_len, selectquery_len, lockquery_len ,ret=FAILURE;
+
+	char *prequery_select="select sess_val from phpsession where sess_key='%s' and sess_host='%s' and unix_timestamp()<=sess_mtime+%s";
+	int prequery_select_len=106;
+
+	char *prequery_lock="select get_lock('%s',%s)";
+	int prequery_lock_len=24;
+
 	char *escapedkey=NULL;
 	char *escapedhost=NULL;
-	char *query=NULL;
+	char *query_lock=NULL;
+	char *query_select=NULL;
 	MYSQL_RES *res;
 	MYSQL_ROW row;
 	my_ulonglong rows;
 	unsigned long *lengths;
-	int ret=FAILURE;
 
 	escapedhost=get_escapedhost();
 
@@ -299,12 +307,22 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedkey,key,key_len);
 
-	prequery_len=strlen(prequery)+(key_len*2+1)+strlen(SESSION_MYSQL_G(gc_maxlifetime));
-	query=emalloc(prequery_len);
+	if (SESSION_MYSQL_G(locking)) {
+		lockquery_len=prequery_lock_len+(key_len*2+1)+strlen(SESSION_MYSQL_G(lock_timeout));
+		query_lock=emalloc(lockquery_len);
+		query_len=snprintf(query_lock,lockquery_len,prequery_lock,escapedkey,SESSION_MYSQL_G(lock_timeout));
+		mysql_real_query(SESSION_MYSQL_G(mysql),query_lock,query_len);
+		res=mysql_use_result(SESSION_MYSQL_G(mysql));
+		mysql_free_result(res);
+	}
 
-	query_len=snprintf(query,prequery_len,prequery,escapedkey,escapedhost,SESSION_MYSQL_G(gc_maxlifetime));
 
-	if (!mysql_real_query(SESSION_MYSQL_G(mysql),query,query_len)) {
+	selectquery_len=prequery_select_len+(key_len*2+1)+strlen(SESSION_MYSQL_G(gc_maxlifetime))+strlen(escapedhost);
+	query_select=emalloc(selectquery_len);
+
+	query_len=snprintf(query_select,selectquery_len,prequery_select,escapedkey,escapedhost,SESSION_MYSQL_G(gc_maxlifetime));
+
+	if (!mysql_real_query(SESSION_MYSQL_G(mysql),query_select,query_len)) {
 		if ((res=mysql_store_result(SESSION_MYSQL_G(mysql)))) {
 			if (mysql_num_rows(res)!=0) {
 				if (row=mysql_fetch_row(res)) {
@@ -315,7 +333,6 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 						ret=SUCCESS;
 					} else {
 						*vallen=0;
-						ret=FAILURE;
 					}
 				}
 			}
@@ -331,23 +348,32 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 		efree(escapedhost);
 	}
 
-	if (query) {
-		efree(query);
+	if (query_select) {
+		efree(query_select);
+	}
+
+	if (query_lock) {
+		efree(query_lock);
 	}
 	
 	return ret;
 } 
 
 static int session_mysql_write(const char *key, const char *val, const size_t vallen TSRMLS_DC) {
-	int key_len,query_len,updatequery_len,insertquery_len;
-	char *prequery_update="update phpsession set sess_val=\"%s\",sess_mtime=unix_timestamp() where sess_host=\"%s\" and sess_key=\"%s\"";
-	char *prequery_insert="insert into phpsession(sess_key,sess_host,sess_mtime,sess_val) values(\"%s\",\"%s\",unix_timestamp(),\"%s\")";
+	int key_len, query_len, updatequery_len, insertquery_len, unlockquery_len, ret=FAILURE;
+	char *prequery_update="update phpsession set sess_val='%s',sess_mtime=unix_timestamp() where sess_host='%s' and sess_key='%s'";
+	int prequery_update_len=102;
+	char *prequery_insert="insert into phpsession(sess_key,sess_host,sess_mtime,sess_val) values('%s','%s',unix_timestamp(),'%s')";
+	int prequery_insert_len=102;
+	char *prequery_unlock="select release_lock('%s')";
+	int prequery_unlock_len=25;
 	char *escapedkey=NULL;
 	char *escapedval=NULL;
 	char *escapedhost=NULL;
 	char *query_update=NULL;
 	char *query_insert=NULL;
-	int ret=FAILURE;
+	char *query_unlock=NULL;
+	MYSQL_RES *res;
 
 	escapedhost=get_escapedhost();
 
@@ -358,8 +384,8 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedkey,key,key_len);
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedval,val,vallen);
-	/* 64 is max hostlen */
-	updatequery_len=strlen(prequery_update)+(key_len*2+1)+(vallen*2+1)+64;
+
+	updatequery_len=prequery_update_len+(key_len*2+1)+(vallen*2+1)+strlen(escapedhost);
 
 	query_update=emalloc(updatequery_len);
 
@@ -369,8 +395,7 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 		if (mysql_affected_rows(SESSION_MYSQL_G(mysql))==1) {
 			ret=SUCCESS;
 		} else {
-			/* 64 is max hostlen */
-			insertquery_len=strlen(prequery_insert)+(key_len*2+1)+(vallen*2+1)+64;
+			insertquery_len=prequery_insert_len+(key_len*2+1)+(vallen*2+1)+strlen(escapedhost);
 			query_insert=emalloc(insertquery_len);
 
 			query_len=snprintf((char *)query_insert,insertquery_len,prequery_insert,escapedkey,escapedhost,escapedval);
@@ -382,6 +407,16 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 			}
 		}
 	}
+
+	if (SESSION_MYSQL_G(locking)) {
+		unlockquery_len=prequery_unlock_len+(key_len*2+1);
+		query_unlock=emalloc(unlockquery_len);
+		query_len=snprintf(query_unlock,unlockquery_len,prequery_unlock,escapedkey);
+		mysql_real_query(SESSION_MYSQL_G(mysql),query_unlock,query_len);
+		res=mysql_use_result(SESSION_MYSQL_G(mysql));
+		mysql_free_result(res);
+	}
+
 
 	if (escapedkey) {
 		efree(escapedkey);
@@ -398,15 +433,17 @@ static int session_mysql_write(const char *key, const char *val, const size_t va
 	if (query_insert) {
 		efree(query_insert);
 	}
+	if (query_unlock) {
+		efree(query_unlock);
+	}
 
 	return ret;
 }
 
 
 static int session_mysql_delete(const char *key TSRMLS_DC) {
-	int key_len,query_len,prequery_len;
-	int ret=FAILURE;
-	char *prequery="delete from phpsession where sess_key=\"%s\" and sess_host=\"%s\"";
+	int key_len, query_len, prequery_len, ret=FAILURE;
+	char *prequery="delete from phpsession where sess_key='%s' and sess_host='%s'";
 	char *escapedkey=NULL;
 	char *escapedhost=NULL;
 	char *query=NULL;
@@ -423,7 +460,7 @@ static int session_mysql_delete(const char *key TSRMLS_DC) {
 
 	mysql_real_escape_string(SESSION_MYSQL_G(mysql),escapedkey,key,key_len);
 
-	prequery_len=strlen(prequery)+(key_len*2+1);
+	prequery_len=strlen(prequery)+(key_len*2+1)+strlen(escapedhost);
 	query=emalloc(prequery_len);
 
 	query_len=snprintf(query,prequery_len,prequery,escapedkey,escapedhost);
@@ -451,16 +488,14 @@ static int session_mysql_delete(const char *key TSRMLS_DC) {
 
 static int session_mysql_gc() {
 	char *prequery="delete from phpsession where unix_timestamp()>=sess_mtime+%s";
-	char *escapedkey=NULL;
 	char *query=NULL;
-	int key_len,query_len,prequery_len;
+	int key_len, query_len, prequery_len, ret=FAILURE;
 	MYSQL_RES *res;
 	MYSQL_ROW row;
 	my_ulonglong rows;
 	unsigned long *lengths;
-	int ret=FAILURE;
 
-	prequery_len=strlen(prequery)+strlen(SESSION_MYSQL_G(gc_maxlifetime));
+	prequery_len=strlen(prequery)+strlen(SESSION_MYSQL_G(gc_maxlifetime))+1;
 	query=emalloc(prequery_len);
 
 	query_len=snprintf(query,prequery_len,prequery,SESSION_MYSQL_G(gc_maxlifetime));
@@ -469,10 +504,6 @@ static int session_mysql_gc() {
 		if (mysql_affected_rows(SESSION_MYSQL_G(mysql))==1) {
 			ret=SUCCESS;
 		}
-	}
-
-	if (escapedkey) {
-		efree(escapedkey);
 	}
 
 	if (query) {
@@ -487,15 +518,15 @@ static int session_mysql_gc() {
  */
 PS_OPEN_FUNC(mysql)
 {
+	int ret;
 	*mod_data = (void *)1; 
 
-	if (!SESSION_MYSQL_G(mysql)) {
-		if (!session_mysql_connect()){
-			return FAILURE;
-		}
-	}
-
-    return SUCCESS;
+	ret=session_mysql_connect();
+	if (SESSION_MYSQL_G(quiet)) {
+		return SUCCESS;
+	} else {
+		return ret;
+	} 
 }
 /* }}} */
 
@@ -506,6 +537,7 @@ PS_CLOSE_FUNC(mysql)
 	*mod_data = (void *)0;
 
 	session_mysql_close();
+
 	return SUCCESS;
 }
 /* }}} */
@@ -521,6 +553,7 @@ PS_READ_FUNC(mysql)
 		}
 	}
 
+	/* here is ok to return failure */
 	ret=session_mysql_read(key,val,vallen TSRMLS_CC);
 
 	return ret;
@@ -531,13 +564,25 @@ PS_READ_FUNC(mysql)
  */
 PS_WRITE_FUNC(mysql)
 {
+	int ret;
+
 	if (!SESSION_MYSQL_G(mysql)) {
 		if (!session_mysql_connect()){
-			return FAILURE;
+			if (SESSION_MYSQL_G(quiet)) {
+				return SUCCESS;
+			} else {
+				return FAILURE;
+			}
 		}
 	}
 
-	return session_mysql_write(key, val, vallen TSRMLS_CC);
+	ret=session_mysql_write(key, val, vallen TSRMLS_CC);
+
+	if (SESSION_MYSQL_G(quiet)) {
+		return SUCCESS;
+	} else {
+		return ret;
+	}
 }
 /* }}} */
 
@@ -546,15 +591,24 @@ PS_WRITE_FUNC(mysql)
 PS_DESTROY_FUNC(mysql)
 {
 	int ret;
+
 	if (!SESSION_MYSQL_G(mysql)) {
 		if (!session_mysql_connect()){
-			return FAILURE;
+			if (SESSION_MYSQL_G(quiet)) {
+				return SUCCESS;
+			} else {
+				return FAILURE;
+			}
 		}
 	}
 
 	ret=session_mysql_delete(key TSRMLS_CC);
 
-	return ret;
+	if (SESSION_MYSQL_G(quiet)) {
+		return SUCCESS;
+	} else {
+		return ret;
+	}
 }
 /* }}} */
 
@@ -563,15 +617,24 @@ PS_DESTROY_FUNC(mysql)
 PS_GC_FUNC(mysql)
 {
 	int ret;
+
 	if (!SESSION_MYSQL_G(mysql)) {
 		if (!session_mysql_connect()){
-			return FAILURE;
+			if (SESSION_MYSQL_G(quiet)) {
+				return FAILURE;
+			} else {
+				return SUCCESS;
+			}
 		}
 	}
 
 	ret=session_mysql_gc();
 
-	return ret;
+	if (SESSION_MYSQL_G(quiet)) {
+		return SUCCESS;
+	} else {
+		return ret;
+	}
 }
 /* }}} */
 

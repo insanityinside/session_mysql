@@ -12,13 +12,16 @@ ZEND_BEGIN_MODULE_GLOBALS(session_mysql)
 	int hostcheck;
 	int hostcheck_removewww;
 	int persistent;
+	int quiet;
+	int locking;
+	char *gc_maxlifetime;
+	char *lock_timeout;
 
 	MYSQL *mysql;
 	char *db;
 	char *host;
 	char *user;
 	char *pass;
-	char *gc_maxlifetime;
 	char *sess_host;
 ZEND_END_MODULE_GLOBALS(session_mysql)
 
@@ -28,7 +31,7 @@ ZEND_END_MODULE_GLOBALS(session_mysql)
 #define SESSION_MYSQL_G(v) (session_mysql_globals.v)
 #endif
 
-#define PHP_SESSION_MYSQL_VERSION "1.0"
+#define PHP_SESSION_MYSQL_VERSION "1.2"
 #define PHP_SESSION_MYSQL_EXTNAME "session_mysql"
 
 #include "ext/session/php_session.h"

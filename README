@@ -9,7 +9,7 @@ WTF
 - mysql session save handler for php
 
 SOME THINGS TO KNOW
-- doesnt support locking
+- support locking
 - very quiet (doesnt log any error) (but upper session functions can print some error)
 - php must be compiled with mysql support
 
@@ -19,6 +19,10 @@ patches and comments are welcome
 
 CHANGELOG
 
+6.11.2005 - ver 1.2 - fixed some bugs
+                    - locking support via GET_LOCK()/RELEASE_LOCK(), so locking is possible with myisam)
+                    - new option session_mysql.quiet, default 0, when set to 1, return in many functions SUCCESSFUL, so upper session functions dont log really anything
+                    - chaged sess_val in create table from blob(64kB) to mediumblob(16MB)
 6.11.2005 - ver 1.1 - dont display session_mysql.db in phpinfo, because there is mysql user and password :)
 5.11.2005 - ver 1.0 - first release
 
@@ -34,7 +38,7 @@ sql commands:
    sess_key char(64) not null,
    sess_mtime int(10) unsigned not null,
    sess_host char(64) not null,
-   sess_val blob not null,
+   sess_val mediumblob not null,
 
    index i_key(sess_key(6)),
    index i_mtime(sess_mtime),
@@ -74,6 +78,15 @@ CONFIGURATION OPTIONS (and default values after =)
 
  session_mysql.gc_maxlifetime="21600"
    remove sessions older than 21600 seconds when GC (garbage collector) is waked
+
+ session_mysql.locking="1"
+   locking support via GET_LOCK()/RELEASE_LOCK(), for more information read this http://www.issociate.de/board/post/184369/warning_&_question_about_mysql_sessions_&_concurrency.html
+
+ session_mysql.lock_timeout="5" 
+   lock timeout, default 5 seconds
+
+ session_mysql.quiet="0"
+   when set to 1, return always SUCCESSFUL, so upper session functions dont log really anything
 
  OTHER USEFUL OPTIONS
  session.save_handler - must be set to "mysql"
