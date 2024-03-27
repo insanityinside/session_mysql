@@ -281,7 +281,7 @@ static void session_mysql_close() {
 	}
 }
 
-static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS_DC) {
+static int session_mysql_read(const char *key, char **val, int *vallen TSRMLS_DC) {
 	int key_len, query_len, selectquery_len, lockquery_len, escapedhost_len, ret=FAILURE;
 
 	char *prequery_select="select sess_val from phpsession where sess_key='%s' and sess_host='%s' and unix_timestamp()<=sess_mtime+%s";
@@ -364,7 +364,7 @@ static int session_mysql_read(const char *key, char **val, size_t *vallen TSRMLS
 	return ret;
 } 
 
-static int session_mysql_write(const char *key, const char *val, const size_t vallen TSRMLS_DC) {
+static int session_mysql_write(const char *key, const char *val, const int vallen TSRMLS_DC) {
 	int key_len, query_len, updatequery_len, insertquery_len, unlockquery_len, escapedhost_len, ret=FAILURE;
 	char *prequery_update="update phpsession set sess_val='%s',sess_mtime=unix_timestamp() where sess_host='%s' and sess_key='%s'";
 	int prequery_update_len=102;

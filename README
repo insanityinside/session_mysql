@@ -19,6 +19,7 @@ patches and comments are welcome
 
 CHANGELOG
 
+25.02.2006 - ver 1.6 - fixed bug that caused SEGFAULT on 64bit system (because we use size_t for vallen variable and really it is int type)
 22.11.2005 - ver 1.5 - add optimize table in destroy function
                      - licence changed from beerware to dual licence beerware / MIT (MIT is BSD like, so you can sell it you evil capitalist ;))
 19.11.2005 - ver 1.4 - fixed reading of session data where is NULL '\0'
