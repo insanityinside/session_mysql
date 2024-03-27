@@ -8,6 +8,25 @@
 
 #include "ext/session/php_session.h"
 
+/* default values for php.ini */
+#define PHP_INI_ENTRY_DB "host=localhost db=phpsession user=phpsession pass=phpsession"
+#define PHP_INI_ENTRY_HOSTCHECK "1"
+#define PHP_INI_ENTRY_HOSTCHECK_REMOVEWWW "1"
+#define PHP_INI_ENTRY_PERSISTENT "1"
+#define PHP_INI_ENTRY_GC_MAXLIFETIME "21600"
+#define PHP_INI_ENTRY_QUIET "0"
+#define PHP_INI_ENTRY_LOCKING "1"
+#define PHP_INI_ENTRY_LOCK_TIMEOUT "5"
+
+//#define DEBUG
+#undef DEBUG
+
+#ifdef DEBUG
+#define	_D(args...) { fprintf(stderr, "%s:%d %s(): ", strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__, __LINE__, __FUNCTION__); fprintf(stderr, args); fprintf(stderr, "\n"); fflush(stderr); }
+#else
+#define _D(args...)
+#endif
+
 ZEND_DECLARE_MODULE_GLOBALS(session_mysql)
 
 /* {{{ zend_session_mysql_init_globals
@@ -142,8 +161,24 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 	}
 
 	if ((!host && !sock) || !db || !user || !pass) {
+		if (host) {
+			pefree(host, 1);
+		}
+		if (db) {
+			pefree(db, 1);
+		}
+		if (user) {
+			pefree(user, 1);
+		}
+		if (pass) {
+			pefree(pass, 1);
+		}
+		if (sock) {
+			pefree(sock, 1);
+		}
 		return(FAILURE);
 	}
+
 	if (SESSION_MYSQL_G(host)) {
 		pefree(SESSION_MYSQL_G(host),1);
 	}
@@ -166,8 +201,13 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 	SESSION_MYSQL_G(sock)=sock;
 	SESSION_MYSQL_G(port)=port;
 
-	for(i=0 ; i<strlen(new_value) ; i++) {
-		new_value[i]=' ';
+	/* we dont rewrite default value because it segfault webserver
+	 * (default value is in readonly section of shared library)
+	 */
+	if (strcmp(new_value, PHP_INI_ENTRY_DB)!=0) {
+		for(i=0 ; i<strlen(new_value) ; i++) {
+			new_value[i]=' ';
+		}
 	}
 
 	efree(val);
@@ -179,14 +219,14 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 /* {{{ PHP_INI
  */
 PHP_INI_BEGIN()
-STD_PHP_INI_ENTRY("session_mysql.db", "host=localhost db=phpsession user=phpsession pass=phpsession", PHP_INI_ALL, OnChangeSessionMysqlHost, conn, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.hostcheck", "1", PHP_INI_ALL, OnUpdateBool, hostcheck, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.hostcheck_removewww", "1", PHP_INI_ALL, OnUpdateBool, hostcheck_removewww, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.persistent", "1", PHP_INI_ALL, OnUpdateBool, persistent, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.gc_maxlifetime", "21600", PHP_INI_ALL, OnUpdateString, gc_maxlifetime, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.quiet", "0", PHP_INI_ALL, OnUpdateBool, quiet, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.locking", "1", PHP_INI_ALL, OnUpdateBool, locking, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.lock_timeout", "5", PHP_INI_ALL, OnUpdateString, lock_timeout, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.db", PHP_INI_ENTRY_DB, PHP_INI_ALL, OnChangeSessionMysqlHost, conn, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.hostcheck", PHP_INI_ENTRY_HOSTCHECK, PHP_INI_ALL, OnUpdateBool, hostcheck, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.hostcheck_removewww", PHP_INI_ENTRY_HOSTCHECK_REMOVEWWW, PHP_INI_ALL, OnUpdateBool, hostcheck_removewww, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.persistent", PHP_INI_ENTRY_PERSISTENT, PHP_INI_ALL, OnUpdateBool, persistent, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.gc_maxlifetime", PHP_INI_ENTRY_GC_MAXLIFETIME, PHP_INI_ALL, OnUpdateString, gc_maxlifetime, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.quiet", PHP_INI_ENTRY_QUIET, PHP_INI_ALL, OnUpdateBool, quiet, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.locking", PHP_INI_ENTRY_LOCKING, PHP_INI_ALL, OnUpdateBool, locking, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.lock_timeout", PHP_INI_ENTRY_LOCK_TIMEOUT, PHP_INI_ALL, OnUpdateString, lock_timeout, zend_session_mysql_globals, session_mysql_globals)
 PHP_INI_END()
 /* }}} */
 
@@ -284,21 +324,25 @@ static char *get_escapedhost(TSRMLS_D) {
 }
 
 static int session_mysql_connect(TSRMLS_D) {
-#if	MYSQL_VERSION_ID >= 50013
-	my_bool opt=1;
-#endif
+	// here we don't check for persistent, as if persistent is disabled the
+	// mysql handle is closed at the end of request.
+	if (!SESSION_MYSQL_G(mysql)) {
+		int ret;
+		MYSQL *h;
 
-	if (!SESSION_MYSQL_G(mysql) || !SESSION_MYSQL_G(persistent)) {
-		if (!SESSION_MYSQL_G(mysql)) {
-			if (!(SESSION_MYSQL_G(mysql)=mysql_init(SESSION_MYSQL_G(mysql)))) {
-				return FAILURE;
-			}
+		if (!(h = mysql_init(SESSION_MYSQL_G(mysql)))) {
+			return FAILURE;
 		}
+		SESSION_MYSQL_G(mysql) = h;
 
+_D("mysql version: %d", MYSQL_VERSION_ID);
 #if	MYSQL_VERSION_ID >= 50013
-		mysql_options(SESSION_MYSQL_G(mysql), MYSQL_OPT_RECONNECT, &opt);
+		// in mysql versions above 5.0.3 the reconnect flag is off by default,
+		// since 5.0.13 it's possible to set reconnect flag
+		my_bool reconnect = 1;
+		mysql_options(SESSION_MYSQL_G(mysql), MYSQL_OPT_RECONNECT, &reconnect);
 #endif
-		if (mysql_real_connect(
+		h = mysql_real_connect(
 								SESSION_MYSQL_G(mysql),
 								SESSION_MYSQL_G(host),
 								SESSION_MYSQL_G(user),
@@ -306,15 +350,25 @@ static int session_mysql_connect(TSRMLS_D) {
 								SESSION_MYSQL_G(db),
 								SESSION_MYSQL_G(port),
 								SESSION_MYSQL_G(sock),
-								CLIENT_FOUND_ROWS)) {
-
-			return SUCCESS;
-		}
-	} else {
-		if (mysql_ping(SESSION_MYSQL_G(mysql))==0) {
+								CLIENT_FOUND_ROWS);
+#if	MYSQL_VERSION_ID >= 50013 && MYSQL_VERSION_ID < 50019
+		// address bug prior 5.0.19
+		reconnect = 1;
+		mysql_options(SESSION_MYSQL_G(mysql), MYSQL_OPT_RECONNECT, &reconnect);
+#endif
+		if (h) {
 			return SUCCESS;
 		}
 	}
+	
+	if (mysql_ping(SESSION_MYSQL_G(mysql)) == 0) {
+		return SUCCESS;
+	}
+
+	// so ping_failed(), we reset mysql handle so it would be attempted to
+	// connect on next request again
+	mysql_close(SESSION_MYSQL_G(mysql));
+	SESSION_MYSQL_G(mysql) = NULL;
 	return FAILURE;
 }
 
@@ -406,7 +460,7 @@ static int session_mysql_read(const char *key, char **val, int *vallen TSRMLS_DC
 	}
 	
 	return ret;
-} 
+}
 
 static int session_mysql_write(const char *key, const char *val, const int vallen TSRMLS_DC) {
 	int key_len, query_len, updatequery_len, insertquery_len, unlockquery_len, escapedhost_len, ret=FAILURE;
@@ -590,14 +644,14 @@ static int session_mysql_gc(TSRMLS_D) {
 PS_OPEN_FUNC(mysql)
 {
 	int ret;
-	*mod_data = (void *)1; 
+	*mod_data = (void *)1;
 
 	ret=session_mysql_connect(TSRMLS_C);
 	if (SESSION_MYSQL_G(quiet)) {
 		return SUCCESS;
 	} else {
 		return ret;
-	} 
+	}
 }
 /* }}} */
 
@@ -716,7 +770,7 @@ PS_VALIDATE_SID_FUNC(mysql)
 {
 	int ret, vallen;
 	char *val, c;
-	const char *p;     
+	const char *p;
 
 
 	for (p = key; (c = *p); p++) {
@@ -742,7 +796,7 @@ PS_VALIDATE_SID_FUNC(mysql)
 
 	ret=session_mysql_read(key,&val,&vallen TSRMLS_CC);
 
-	return ret;    
+	return ret;
 }
 /* }}} */
 #endif

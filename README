@@ -1,4 +1,4 @@
-php extension: session_mysql - version 1.0
+php extension: session_mysql - version 1.10
 Author: Pavel Stano <stano@websupport.sk>
 Homepage: http://websupport.sk/~stanojr/projects/session_mysql/
 Licence: dual licence beerware / MIT (you can choose)
@@ -10,7 +10,6 @@ WTF
 
 SOME THINGS TO KNOW
 - support locking
-- very quiet (doesnt log any error) (but upper session functions can print some error)
 - php must be compiled with mysql support
 
 patches and comments are welcome 
@@ -19,6 +18,12 @@ patches and comments are welcome
 
 CHANGELOG
 
+10.09.2007 - ver 1.10 - fix memory leak (patch from Elan Ruusamäe)
+                      - resolve session handle being broken until webserver restart
+		        if the connection to mysql server is dropped
+			(either due server restart or server timeout)
+			(patch from Elan Ruusamäe)
+		      - fix segmentation fault when no module php.ini setting is set (thanks to Elan Ruusamäe)
 12.06.2006 - ver 1.9 - fixes compilation with ZTS (thanks to Elan Ruusamäe)
                      - default port set to 3306 (thanks to Juan Fernández)
 17.04.2006 - ver 1.8 - fixed persistent connections with mysql 5.0 client library (thanks to zoeloelip)
