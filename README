@@ -1,11 +1,12 @@
 php extension: session_mysql - version 1.0
 Author: Pavel Stano <stano@websupport.sk>
+Homepage: http://websupport.sk/~stanojr/projects/session_mysql/
 Licence: Beerware
 Copyright 2005 by Pavel Stano. All rights reserved
 
 WTF
 
-- mysql session storage handler for php
+- mysql session save handler for php
 
 SOME THINGS TO KNOW
 - doesnt support locking
@@ -18,7 +19,8 @@ patches and comments are welcome
 
 CHANGELOG
 
-1.0 - first release
+6.11.2005 - ver 1.1 - dont display session_mysql.db in phpinfo, because there is mysql user and password :)
+5.11.2005 - ver 1.0 - first release
 
 --------
 

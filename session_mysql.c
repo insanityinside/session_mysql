@@ -66,15 +66,19 @@ zend_module_entry session_mysql_module_entry =
 ZEND_GET_MODULE(session_mysql)
 #endif
 
-/* {{{ PHP_INI_MH(OnChangeSessionMysqlHost)
- */
-PHP_INI_MH(OnChangeSessionMysqlHost)
+int ChangeSessionMysqlHost(TSRMLS_D)
 {
-	int len = new_value_length;
+	int len;
 	int i=0,y;
-	char *val,*host=NULL,*db=NULL,*user=NULL,*pass=NULL;
+	char *new_value,*val,*host=NULL,*db=NULL,*user=NULL,*pass=NULL;
 
-	val=estrdup(new_value);
+	if (cfg_get_string ("session_mysql.db", &new_value) == FAILURE || *new_value == '\0') {
+		val=estrdup("host=localhost db=phpsession user=phpsession pass=phpsession");
+	} else {
+		val=estrdup(new_value);
+	}
+
+	len=strlen(val);
 
 	while(val[i]) {
 		if(!strncmp(val+i,"host=",5)) {
@@ -118,8 +122,6 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 		}
 	}
 
-	efree(val);
-
 	if (!host || !db || !user || !pass) {
 		return(FAILURE);
 	}
@@ -140,14 +142,25 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 	SESSION_MYSQL_G(user)=user;
 	SESSION_MYSQL_G(pass)=pass;
 
+	efree(val);
+
 	return(SUCCESS);
 }
+
+/* {{{ PHP_INI_DISP(hide_session_mysql_db)
+ */
+PHP_INI_DISP(hide_session_mysql_db) {
+	ZEND_PUTS("hidden");
+}
 /* }}} */
+
 
 /* {{{ PHP_INI
  */
 PHP_INI_BEGIN()
+/* eee, we handle session_mysql.db in PHP_MINIT_FUNCTION, because it is hidden :)
 STD_PHP_INI_ENTRY("session_mysql.db", "host=localhost db=phpsession user=phpsession pass=phpsession", PHP_INI_SYSTEM, OnChangeSessionMysqlHost, conn, zend_session_mysql_globals, session_mysql_globals)
+*/
 STD_PHP_INI_ENTRY("session_mysql.hostcheck", "1", PHP_INI_SYSTEM, OnUpdateBool, hostcheck, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.hostcheck_removewww", "1", PHP_INI_SYSTEM, OnUpdateBool, hostcheck_removewww, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.persistent", "1", PHP_INI_SYSTEM, OnUpdateBool, persistent, zend_session_mysql_globals, session_mysql_globals)
@@ -162,6 +175,8 @@ PHP_MINIT_FUNCTION(session_mysql)
 	ZEND_INIT_MODULE_GLOBALS(session_mysql, session_mysql_init_globals, NULL);
 
 	REGISTER_INI_ENTRIES();
+
+	ChangeSessionMysqlHost(TSRMLS_C);
 
 	php_session_register_module(&ps_mod_mysql);
 	return SUCCESS;
