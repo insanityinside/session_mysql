@@ -20,9 +20,11 @@ ZEND_BEGIN_MODULE_GLOBALS(session_mysql)
 	MYSQL *mysql;
 	char *db;
 	char *host;
+	char *sock;
 	char *user;
 	char *pass;
 	char *sess_host;
+	unsigned int port;
 ZEND_END_MODULE_GLOBALS(session_mysql)
 
 #ifdef ZTS
@@ -31,7 +33,7 @@ ZEND_END_MODULE_GLOBALS(session_mysql)
 #define SESSION_MYSQL_G(v) (session_mysql_globals.v)
 #endif
 
-#define PHP_SESSION_MYSQL_VERSION "1.7"
+#define PHP_SESSION_MYSQL_VERSION "1.8"
 #define PHP_SESSION_MYSQL_EXTNAME "session_mysql"
 
 #include "ext/session/php_session.h"

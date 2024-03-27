@@ -16,6 +16,8 @@ static void session_mysql_init_globals(zend_session_mysql_globals *session_mysql
 {
 	SESSION_MYSQL_G(db)=NULL;
 	SESSION_MYSQL_G(host)=NULL;
+	SESSION_MYSQL_G(sock)=NULL;
+	SESSION_MYSQL_G(port)=0;
 	SESSION_MYSQL_G(user)=NULL;
 	SESSION_MYSQL_G(pass)=NULL;
 	SESSION_MYSQL_G(mysql)=NULL;
@@ -72,7 +74,8 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 {
 	int len = new_value_length;
 	int i=0,y;
-	char *val,*host=NULL,*db=NULL,*user=NULL,*pass=NULL;
+	char *val,*host=NULL,*db=NULL,*user=NULL,*pass=NULL,*sock=NULL;
+	unsigned int port;
 
 	val=estrdup(new_value);
 
@@ -87,6 +90,24 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 			}
 			val[y]='\0';
 			host=pestrdup(val+i,1);
+			i=y+1;
+		} else if (!strncmp(val+i,"port=",5)) {
+			i+=5;
+			y=i;
+			while(val[y] && val[y]!=' ') {
+				y++;
+			}
+			val[y]='\0';
+			port=(unsigned int) strtol(val+i, NULL, 10);
+			i=y+1;
+		} else if (!strncmp(val+i,"sock=",5)) {
+			i+=5;
+			y=i;
+			while(val[y] && val[y]!=' ') {
+				y++;
+			}
+			val[y]='\0';
+			sock=pestrdup(val+i,1);
 			i=y+1;
 		} else if (!strncmp(val+i,"db=",3)) {
 			i+=3;
@@ -120,7 +141,7 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 		}
 	}
 
-	if (!host || !db || !user || !pass) {
+	if ((!host && !sock) || !db || !user || !pass) {
 		return(FAILURE);
 	}
 	if (SESSION_MYSQL_G(host)) {
@@ -135,10 +156,15 @@ PHP_INI_MH(OnChangeSessionMysqlHost)
 	if (SESSION_MYSQL_G(pass)) {
 		pefree(SESSION_MYSQL_G(pass),1);
 	}
+	if (SESSION_MYSQL_G(sock)) {
+		pefree(SESSION_MYSQL_G(sock),1);
+	}
 	SESSION_MYSQL_G(host)=host;
 	SESSION_MYSQL_G(db)=db;
 	SESSION_MYSQL_G(user)=user;
 	SESSION_MYSQL_G(pass)=pass;
+	SESSION_MYSQL_G(sock)=sock;
+	SESSION_MYSQL_G(port)=port;
 
 	for(i=0 ; i<strlen(new_value) ; i++) {
 		new_value[i]=' ';
@@ -258,13 +284,30 @@ static char *get_escapedhost() {
 }
 
 static int session_mysql_connect() {
+#if	MYSQL_VERSION_ID >= 50013
+	my_bool opt=1;
+#endif
+
 	if (!SESSION_MYSQL_G(mysql) || !SESSION_MYSQL_G(persistent)) {
 		if (!SESSION_MYSQL_G(mysql)) {
 			if (!(SESSION_MYSQL_G(mysql)=mysql_init(SESSION_MYSQL_G(mysql)))) {
 				return FAILURE;
 			}
 		}
-		if (mysql_real_connect(SESSION_MYSQL_G(mysql), SESSION_MYSQL_G(host), SESSION_MYSQL_G(user), SESSION_MYSQL_G(pass), SESSION_MYSQL_G(db),0,NULL,CLIENT_FOUND_ROWS)) {
+
+#if	MYSQL_VERSION_ID >= 50013
+		mysql_options(SESSION_MYSQL_G(mysql), MYSQL_OPT_RECONNECT, &opt);
+#endif
+		if (mysql_real_connect(
+								SESSION_MYSQL_G(mysql),
+								SESSION_MYSQL_G(host),
+								SESSION_MYSQL_G(user),
+								SESSION_MYSQL_G(pass),
+								SESSION_MYSQL_G(db),
+								SESSION_MYSQL_G(port),
+								SESSION_MYSQL_G(sock),
+								CLIENT_FOUND_ROWS)) {
+
 			return SUCCESS;
 		}
 	} else {
@@ -478,7 +521,7 @@ static int session_mysql_delete(const char *key TSRMLS_DC) {
 	query_len=snprintf(query_delete,deletequery_len,prequery_delete,escapedkey,escapedhost);
 
 	if (!mysql_real_query(SESSION_MYSQL_G(mysql),query_delete,query_len)) {
-		if (mysql_affected_rows(SESSION_MYSQL_G(mysql))==1) {
+		if (mysql_affected_rows(SESSION_MYSQL_G(mysql))!=-1) {
 			ret=SUCCESS;
 		}
 	}

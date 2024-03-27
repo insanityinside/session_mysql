@@ -19,6 +19,9 @@ patches and comments are welcome
 
 CHANGELOG
 
+17.04.2006 - ver 1.8 - fixed persistent connections with mysql 5.0 client library (thanks to zoeloelip)
+                     - fixed session_destroy - when affected rows==0 we must return SUCCESSFUL (thanks to zoeloelip)
+                     - add port, sock variables to session_mysql.db
 09.03.2006 - ver 1.7 - security fix - db/login/pass can be retrieved via get_cfg_var('session_mysql.db')
                        so change back to standard ini parsing function PHP_INI_MH
                        and replace string session_mysql.db with character ' ' (SPACE) after parsing
@@ -80,6 +83,7 @@ session_mysql.db="host=localhost db=phpsession user=phpsession pass=phpsession" 
 CONFIGURATION OPTIONS (and default values after =)
 
  session_mysql.db="host=localhost db=phpsession user=phpsession pass=phpsession"
+   you can additionaly use sock and port
 
  session_mysql.hostcheck="1"
    when inserting, retreiving and deleting session from database, add a check for $_SERVER['SERVER_NAME']
