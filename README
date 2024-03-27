@@ -1,0 +1,86 @@
+php extension: session_mysql - version 1.0
+Author: Pavel Stano <stano@websupport.sk>
+Licence: Beerware
+Copyright 2005 by Pavel Stano. All rights reserved
+
+WTF
+
+- mysql session storage handler for php
+
+SOME THINGS TO KNOW
+- doesnt support locking
+- very quiet (doesnt log any error) (but upper session functions can print some error)
+- php must be compiled with mysql support
+
+patches and comments are welcome 
+
+--------
+
+CHANGELOG
+
+1.0 - first release
+
+--------
+
+HOW TO INSTALL
+
+1. create database,table and user on mysql
+sql commands:
+ create database phpsession;
+ grant all privileges on phpsession.* to phpsession identified by "phpsession"; -- CHANGE DEFAULT PASSWORD
+ create table phpsession(
+   sess_key char(64) not null,
+   sess_mtime int(10) unsigned not null,
+   sess_host char(64) not null,
+   sess_val blob not null,
+
+   index i_key(sess_key(6)),
+   index i_mtime(sess_mtime),
+   index i_host(sess_host)
+ );
+
+2. install this extension
+ /path/to/phpize
+ ./configure --enable-session-mysql --with-php-config=/path/to/php-config --with-mysql=/path/to/mysql
+ make
+ make install
+
+3. configure php.ini
+
+session.save_handler = "mysql"
+session_mysql.db="host=localhost db=phpsession user=phpsession pass=phpsession" -- CHANGE DEFAULT PASSWORD
+
+4. restart apache
+
+--------
+
+CONFIGURATION OPTIONS (and default values after =)
+
+ session_mysql.db="host=localhost db=phpsession user=phpsession pass=phpsession"
+
+ session_mysql.hostcheck="1"
+   when inserting, retreiving and deleting session from database, add a check for $_SERVER['SERVER_NAME']
+   this disables potential security problem (when used in mass virtualhosting), because users cannot edit session for other domains
+   $_SERVER['SERVER_NAME'] is copied to local variable before script is executed, so when users change $_SERVER['SERVER_NAME']
+   variable, it does not hurt
+
+ session_mysql.hostcheck_removewww="1"
+   remove "www." if exist from $_SERVER['SERVER_NAME'], so same session on www.example.com and example.com will work
+
+ session_mysql.persistent="1"
+   use persistent connection to mysql (every 1 httpd process will use 1 connection to mysql)
+
+ session_mysql.gc_maxlifetime="21600"
+   remove sessions older than 21600 seconds when GC (garbage collector) is waked
+
+ OTHER USEFUL OPTIONS
+ session.save_handler - must be set to "mysql"
+
+ session.gc_probability = 1
+ session.gc_divisor     = 100
+   Define the probability that the 'garbage collection' process is started
+   on every session initialization.
+   The probability is calculated by using gc_probability/gc_divisor,
+   e.g. 1/100 means there is a 1% chance that the GC process starts
+   on each request.
+ 
