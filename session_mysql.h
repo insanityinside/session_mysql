@@ -5,8 +5,6 @@
 #include "TSRM.h"
 #endif
 
-#include <mysql.h>
-
 ZEND_BEGIN_MODULE_GLOBALS(session_mysql)
 	char *conn;
 	int hostcheck;
@@ -17,7 +15,7 @@ ZEND_BEGIN_MODULE_GLOBALS(session_mysql)
 	char *gc_maxlifetime;
 	char *lock_timeout;
 
-	MYSQL *mysql;
+	MYSQLI *mysql;
 	char *db;
 	char *host;
 	char *sock;
@@ -33,10 +31,12 @@ ZEND_END_MODULE_GLOBALS(session_mysql)
 #define SESSION_MYSQL_G(v) (session_mysql_globals.v)
 #endif
 
-#define PHP_SESSION_MYSQL_VERSION "1.10"
+#define PHP_SESSION_MYSQL_VERSION "2.0"
 #define PHP_SESSION_MYSQL_EXTNAME "session_mysql"
 
 #include "ext/session/php_session.h"
+#include "ext/mysqli/mysqli_mysqlnd.h"
+
 
 extern ps_module ps_mod_mysql;
 #define ps_mysql_ptr &ps_mod_mysql

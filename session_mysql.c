@@ -4,9 +4,9 @@
 
 #include "php.h"
 #include "php_ini.h"
-#include "session_mysql.h"
-
 #include "ext/session/php_session.h"
+#include "ext/mysqli/mysqli_mysqlnd.h"
+#include "session_mysql.h"
 
 /* default values for php.ini */
 #define PHP_INI_ENTRY_DB "host=localhost db=phpsession user=phpsession pass=phpsession"
@@ -53,7 +53,7 @@ PHP_MINFO_FUNCTION(session_mysql);
 /* {{{ session_mysql_functions[]
  */
 /* compiled function list so Zend knows what's in this module */
-static function_entry session_mysql_functions[] =
+static zend_function_entry session_mysql_functions[] =
 {
 	ZEND_FE(session_mysql_status, NULL)
 	{NULL, NULL, NULL}
