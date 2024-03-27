@@ -19,6 +19,11 @@ patches and comments are welcome
 
 CHANGELOG
 
+09.03.2006 - ver 1.7 - security fix - db/login/pass can be retrieved via get_cfg_var('session_mysql.db')
+                       so change back to standard ini parsing function PHP_INI_MH
+                       and replace string session_mysql.db with character ' ' (SPACE) after parsing
+                     - everything can be now changed via .htaccess (session_mysql.db too)
+                     - support for hardened patch (http://hardened-php.net/)
 25.02.2006 - ver 1.6 - fixed bug that caused SEGFAULT on 64bit system (because we use size_t for vallen variable and really it is int type)
 22.11.2005 - ver 1.5 - add optimize table in destroy function
                      - licence changed from beerware to dual licence beerware / MIT (MIT is BSD like, so you can sell it you evil capitalist ;))

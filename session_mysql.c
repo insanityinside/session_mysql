@@ -66,17 +66,15 @@ zend_module_entry session_mysql_module_entry =
 ZEND_GET_MODULE(session_mysql)
 #endif
 
-int ChangeSessionMysqlHost(TSRMLS_D)
+/* {{{ PHP_INI_MH(OnChangeSessionMysqlHost)
+ */
+PHP_INI_MH(OnChangeSessionMysqlHost)
 {
-	int len;
+	int len = new_value_length;
 	int i=0,y;
-	char *new_value,*val,*host=NULL,*db=NULL,*user=NULL,*pass=NULL;
+	char *val,*host=NULL,*db=NULL,*user=NULL,*pass=NULL;
 
-	if (cfg_get_string ("session_mysql.db", &new_value) == FAILURE || *new_value == '\0') {
-		val=estrdup("host=localhost db=phpsession user=phpsession pass=phpsession");
-	} else {
-		val=estrdup(new_value);
-	}
+	val=estrdup(new_value);
 
 	len=strlen(val);
 
@@ -142,21 +140,24 @@ int ChangeSessionMysqlHost(TSRMLS_D)
 	SESSION_MYSQL_G(user)=user;
 	SESSION_MYSQL_G(pass)=pass;
 
+	for(i=0 ; i<strlen(new_value) ; i++) {
+		new_value[i]=' ';
+	}
+
 	efree(val);
 
 	return(SUCCESS);
 }
+/* }}} */
 
 /* {{{ PHP_INI
  */
 PHP_INI_BEGIN()
-/* eee, we handle session_mysql.db in PHP_MINIT_FUNCTION, because it is hidden :)
-STD_PHP_INI_ENTRY("session_mysql.db", "host=localhost db=phpsession user=phpsession pass=phpsession", PHP_INI_SYSTEM, OnChangeSessionMysqlHost, conn, zend_session_mysql_globals, session_mysql_globals)
-*/
+STD_PHP_INI_ENTRY("session_mysql.db", "host=localhost db=phpsession user=phpsession pass=phpsession", PHP_INI_ALL, OnChangeSessionMysqlHost, conn, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.hostcheck", "1", PHP_INI_ALL, OnUpdateBool, hostcheck, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.hostcheck_removewww", "1", PHP_INI_ALL, OnUpdateBool, hostcheck_removewww, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.persistent", "1", PHP_INI_SYSTEM, OnUpdateBool, persistent, zend_session_mysql_globals, session_mysql_globals)
-STD_PHP_INI_ENTRY("session_mysql.gc_maxlifetime", "21600", PHP_INI_SYSTEM, OnUpdateString, gc_maxlifetime, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.persistent", "1", PHP_INI_ALL, OnUpdateBool, persistent, zend_session_mysql_globals, session_mysql_globals)
+STD_PHP_INI_ENTRY("session_mysql.gc_maxlifetime", "21600", PHP_INI_ALL, OnUpdateString, gc_maxlifetime, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.quiet", "0", PHP_INI_ALL, OnUpdateBool, quiet, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.locking", "1", PHP_INI_ALL, OnUpdateBool, locking, zend_session_mysql_globals, session_mysql_globals)
 STD_PHP_INI_ENTRY("session_mysql.lock_timeout", "5", PHP_INI_ALL, OnUpdateString, lock_timeout, zend_session_mysql_globals, session_mysql_globals)
@@ -171,7 +172,7 @@ PHP_MINIT_FUNCTION(session_mysql)
 
 	REGISTER_INI_ENTRIES();
 
-	ChangeSessionMysqlHost(TSRMLS_C);
+//	ChangeSessionMysqlHost(TSRMLS_C);
 
 	php_session_register_module(&ps_mod_mysql);
 	return SUCCESS;
@@ -664,6 +665,44 @@ PS_GC_FUNC(mysql)
 	}
 }
 /* }}} */
+
+#if HARDENING_PATCH
+/* {{{ PS_VALIDATE_SID_FUNC
+ */
+PS_VALIDATE_SID_FUNC(mysql)
+{
+	int ret, vallen;
+	char *val, c;
+	const char *p;     
+
+
+	for (p = key; (c = *p); p++) {
+		/* valid characters are a..z,A..Z,0..9 */
+		if (!((c >= 'a' && c <= 'z')
+			|| (c >= 'A' && c <= 'Z')
+			|| (c >= '0' && c <= '9')
+			|| c == ','
+			|| c == '-')) {
+				return FAILURE;
+		}
+	}
+
+	if (!PS(use_strict_mode)) {
+		return SUCCESS;
+	}
+
+	if (!SESSION_MYSQL_G(mysql)) {
+		if (!session_mysql_connect()){
+			return FAILURE;
+		}
+	}
+
+	ret=session_mysql_read(key,&val,&vallen TSRMLS_CC);
+
+	return ret;    
+}
+/* }}} */
+#endif
 
 
 ZEND_FUNCTION(session_mysql_status) {
